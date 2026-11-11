@@ -149,66 +149,67 @@ diff --git a/src/QListCtrl.cpp b/src/QListCtrl.cpp
  		}
 @@ -1757,2 +1778,3 @@ void CQListCtrl::OnHScroll(UINT nSBCode, UINT nPos, CScrollBar* pScrollBar)
  	CListCtrl::OnHScroll(nSBCode, nPos, pScrollBar);
-+	UpdateHoverItemFromCursor();
++\tUpdateHoverItemFromCursor();
  }
 @@ -1945,3 +1967,4 @@ void CQListCtrl::OnVScroll(UINT nSBCode, UINT nPos, CScrollBar* pScrollBar)
  	CListCtrl::OnVScroll(nSBCode, nPos, pScrollBar);
-+	UpdateHoverItemFromCursor();
- 
++\tUpdateHoverItemFromCursor();
+ 	
  	// Notify parent to update modern scrollbar
-@@ -2021,5 +2044,55 @@ void CQListCtrl::OnMouseMove(UINT nFlags, CPoint point)
+@@ -2021,6 +2044,56 @@ void CQListCtrl::OnMouseMove(UINT nFlags, CPoint point)
  			KillTimer(TIMER_SHOW_SCROLL);
  		}
  	}
-+	if (!m_trackingMouseLeave)
-+	{
-+		TRACKMOUSEEVENT trackMouse = {};
-+		trackMouse.cbSize = sizeof(TRACKMOUSEEVENT);
-+		trackMouse.dwFlags = TME_LEAVE;
-+		trackMouse.hwndTrack = GetSafeHwnd();
-+		m_trackingMouseLeave = (::TrackMouseEvent(&trackMouse) != FALSE);
-+	}
-+	SetHoverItem(HitTest(point));
+ 
++\tif (!m_trackingMouseLeave)
++\t{
++\t\tTRACKMOUSEEVENT trackMouse = {};
++\t\ttrackMouse.cbSize = sizeof(TRACKMOUSEEVENT);
++\t\ttrackMouse.dwFlags = TME_LEAVE;
++\t\ttrackMouse.hwndTrack = GetSafeHwnd();
++\t\tm_trackingMouseLeave = (::TrackMouseEvent(&trackMouse) != FALSE);
++\t}
++\tSetHoverItem(HitTest(point));
  	CListCtrl::OnMouseMove(nFlags, point);
  }
 +
 +void CQListCtrl::OnMouseLeave()
 +{
-+	m_trackingMouseLeave = false;
-+	SetHoverItem(-1);
++\tm_trackingMouseLeave = false;
++\tSetHoverItem(-1);
 +}
 +
 +BOOL CQListCtrl::OnMouseWheel(UINT nFlags, short zDelta, CPoint pt)
 +{
-+	BOOL result = CListCtrl::OnMouseWheel(nFlags, zDelta, pt);
-+	UpdateHoverItemFromCursor();
-+	return result;
++\tBOOL result = CListCtrl::OnMouseWheel(nFlags, zDelta, pt);
++\tUpdateHoverItemFromCursor();
++\treturn result;
 +}
 +
 +void CQListCtrl::SetHoverItem(int item)
 +{
-+	if (item < 0 || item >= GetItemCount())
-+		item = -1;
++\tif (item < 0 || item >= GetItemCount())
++\t\titem = -1;
 +
-+	if (item == m_hoverItem)
-+		return;
++\tif (item == m_hoverItem)
++\t\treturn;
 +
-+	int oldItem = m_hoverItem;
-+	m_hoverItem = item;
++\tint oldItem = m_hoverItem;
++\tm_hoverItem = item;
 +
-+	if (oldItem >= 0 && oldItem < GetItemCount())
-+		RedrawItems(oldItem, oldItem);
-+	if (m_hoverItem >= 0 && m_hoverItem < GetItemCount())
-+		RedrawItems(m_hoverItem, m_hoverItem);
++\tif (oldItem >= 0 && oldItem < GetItemCount())
++\t\tRedrawItems(oldItem, oldItem);
++\tif (m_hoverItem >= 0 && m_hoverItem < GetItemCount())
++\t\tRedrawItems(m_hoverItem, m_hoverItem);
 +}
 +
 +void CQListCtrl::UpdateHoverItemFromCursor()
 +{
-+	CPoint point;
-+	::GetCursorPos(&point);
-+	ScreenToClient(&point);
++\tCPoint point;
++\t::GetCursorPos(&point);
++\tScreenToClient(&point);
 +
-+	CRect clientRect;
-+	GetClientRect(&clientRect);
-+	SetHoverItem(clientRect.PtInRect(point) ? HitTest(point) : -1);
++\tCRect clientRect;
++\tGetClientRect(&clientRect);
++\tSetHoverItem(clientRect.PtInRect(point) ? HitTest(point) : -1);
 +}
