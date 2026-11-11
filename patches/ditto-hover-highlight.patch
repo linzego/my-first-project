@@ -1,0 +1,214 @@
+diff --git a/src/Theme.h b/src/Theme.h
+--- a/src/Theme.h
++++ b/src/Theme.h
+@@ -22,6 +22,8 @@ public:
+ 	COLORREF ListBoxOddRowsText() const { return m_ListBoxOddRowsText; }
+ 	COLORREF ListBoxEvenRowsText() const { return m_ListBoxEvenRowsText; }
++	COLORREF ListBoxHoverBG() const { return m_ListBoxHoverBG; }
++	COLORREF ListBoxHoverText() const { return m_ListBoxHoverText; }
+ 	COLORREF ListBoxSelectedBG() const { return m_ListBoxSelectedBG; }
+ 	COLORREF ListBoxSelectedNoFocusBG() const { return m_ListBoxSelectedNoFocusBG; }
+ 	COLORREF ListBoxSelectedText() const { return m_ListBoxSelectedText; }
+ 	COLORREF ListBoxSelectedNoFocusText() const { return m_ListBoxSelectedNoFocusText; }
+@@ -69,7 +71,9 @@ protected:
+ 	COLORREF m_ListBoxOddRowsBG;
+ 	COLORREF m_ListBoxEvenRowsBG;
+ 	COLORREF m_ListBoxOddRowsText;
+ 	COLORREF m_ListBoxEvenRowsText;
++	COLORREF m_ListBoxHoverBG;
++	COLORREF m_ListBoxHoverText;
+ 	COLORREF m_ListBoxSelectedBG;
+ 	COLORREF m_ListBoxSelectedNoFocusBG;
+ 	COLORREF m_ListBoxSelectedText;
+diff --git a/src/Theme.cpp b/src/Theme.cpp
+--- a/src/Theme.cpp
++++ b/src/Theme.cpp
+@@ -36,7 +36,9 @@ void CTheme::LoadDefaults()
+ 	m_ListBoxOddRowsBG = RGB(255, 255, 255);
+ 	m_ListBoxEvenRowsBG = RGB(243, 243, 243);
+ 	m_ListBoxOddRowsText = RGB(0, 0, 0);
+ 	m_ListBoxEvenRowsText = RGB(0, 0, 0);
++	m_ListBoxHoverBG = RGB(226, 236, 248);
++	m_ListBoxHoverText = RGB(20, 40, 65);
+ 	m_ListBoxSelectedBG = RGB(204, 204, 204);
+ 	m_ListBoxSelectedNoFocusBG = RGB(204, 204, 204);
+ 	m_ListBoxSelectedText = RGB(0, 0, 0);
+@@ -151,9 +153,40 @@ bool CTheme::Load(CString csTheme, bool bHeaderOnly, bool bCheckLastWriteTime)
+ 	LoadColor(ItemHeader, "ListBoxOddRowsBG", m_ListBoxOddRowsBG);
+ 	LoadColor(ItemHeader, "ListBoxEvenRowsBG", m_ListBoxEvenRowsBG);
+ 	LoadColor(ItemHeader, "ListBoxOddRowsText", m_ListBoxOddRowsText);
+ 	LoadColor(ItemHeader, "ListBoxEvenRowsText", m_ListBoxEvenRowsText);
+ 	LoadColor(ItemHeader, "ListBoxSelectedBG", m_ListBoxSelectedBG);
+ 	LoadColor(ItemHeader, "ListBoxSelectedNoFocusBG", m_ListBoxSelectedNoFocusBG);
+ 	LoadColor(ItemHeader, "ListBoxSelectedText", m_ListBoxSelectedText);
+ 	LoadColor(ItemHeader, "ListBoxSelectedNoFocusText", m_ListBoxSelectedNoFocusText);
++
++	// Hover colors are optional so themes created before this feature remain valid.
++	// Derive readable defaults from the theme when explicit XML values are absent.
++	if (ItemHeader->FirstChildElement("ListBoxHoverBG") != NULL)
++	{
++		LoadColor(ItemHeader, "ListBoxHoverBG", m_ListBoxHoverBG);
++	}
++	else
++	{
++		COLORREF rowAverage = RGB(
++			(GetRValue(m_ListBoxOddRowsBG) + GetRValue(m_ListBoxEvenRowsBG)) / 2,
++			(GetGValue(m_ListBoxOddRowsBG) + GetGValue(m_ListBoxEvenRowsBG)) / 2,
++			(GetBValue(m_ListBoxOddRowsBG) + GetBValue(m_ListBoxEvenRowsBG)) / 2);
++		const int selectionMix = 35;
++		m_ListBoxHoverBG = RGB(
++			(GetRValue(rowAverage) * (100 - selectionMix) + GetRValue(m_ListBoxSelectedBG) * selectionMix) / 100,
++			(GetGValue(rowAverage) * (100 - selectionMix) + GetGValue(m_ListBoxSelectedBG) * selectionMix) / 100,
++			(GetBValue(rowAverage) * (100 - selectionMix) + GetBValue(m_ListBoxSelectedBG) * selectionMix) / 100);
++	}
++
++	if (ItemHeader->FirstChildElement("ListBoxHoverText") != NULL)
++	{
++		LoadColor(ItemHeader, "ListBoxHoverText", m_ListBoxHoverText);
++	}
++	else
++	{
++		const double luminance = 0.2126 * GetRValue(m_ListBoxHoverBG) +
++			0.7152 * GetGValue(m_ListBoxHoverBG) + 0.0722 * GetBValue(m_ListBoxHoverBG);
++		m_ListBoxHoverText = luminance >= 145.0 ? RGB(24, 32, 44) : RGB(245, 245, 245);
++	}
++
+ 	LoadColor(ItemHeader, "ClipPastedColor", m_clipPastedColor);
+diff --git a/src/QListCtrl.h b/src/QListCtrl.h
+--- a/src/QListCtrl.h
++++ b/src/QListCtrl.h
+@@ -154,3 +154,5 @@ protected:
+ 	void LoadDittoCopyBufferHotkeys();
+ 	bool MouseInScrollBarArea(CRect crWindow, CPoint point);
++	void SetHoverItem(int item);
++	void UpdateHoverItemFromCursor();
+ 	BOOL DrawRtfText(int nItem, CRect &crRect, CDC *pDC);
+@@ -173,4 +175,6 @@ protected:
+ 	bool m_allSelected;
+ 	int m_linesPerRow;
+ 	DWORD m_mouseOverScrollAreaStart;
++	int m_hoverItem;
++	bool m_trackingMouseLeave;
+ 	bool m_timerToHideScrollAreaSet;
+@@ -203,3 +207,5 @@ protected:
+ 	afx_msg void MeasureItem(LPMEASUREITEMSTRUCT lpMeasureItemStruct);
+ 	afx_msg void OnMouseMove(UINT nFlags, CPoint point);
++	afx_msg void OnMouseLeave();
++	afx_msg BOOL OnMouseWheel(UINT nFlags, short zDelta, CPoint pt);
+ 	DECLARE_MESSAGE_MAP()
+diff --git a/src/QListCtrl.cpp b/src/QListCtrl.cpp
+--- a/src/QListCtrl.cpp
++++ b/src/QListCtrl.cpp
+@@ -204,4 +204,6 @@ CQListCtrl::CQListCtrl()
+ 	m_allSelected = false;
+ 	m_rowHeight = 50;
+ 	m_mouseOverScrollAreaStart = 0;
++	m_hoverItem = -1;
++	m_trackingMouseLeave = false;
+ 	m_showIfClipWasPasted = TRUE;
+@@ -252,3 +254,5 @@ BEGIN_MESSAGE_MAP(CQListCtrl, CListCtrl)
+ 	ON_NOTIFY_REFLECT(NM_CUSTOMDRAW, OnCustomdrawList)
+ 	ON_WM_MOUSEMOVE()
++	ON_WM_MOUSELEAVE()
++	ON_WM_MOUSEWHEEL()
+ 	ON_WM_SYSKEYDOWN()
+@@ -438,4 +442,6 @@ void CQListCtrl::OnCustomdrawList(NMHDR* pNMHDR, LRESULT* pResult)
+ 		rItem.stateMask = LVIS_SELECTED | LVIS_FOCUSED;
+ 		GetItem(&rItem);
++		// Hover is visual only; selected rows keep the existing selection colors.
++		const bool bHover = (nItem == m_hoverItem) && !(rItem.state & LVIS_SELECTED);
+ 
+ 		// Get the rect that bounds the text label.
+ 		GetItemRect(nItem, rcItem, LVIR_SELECTBOUNDS);
+@@ -474,5 +480,10 @@ void CQListCtrl::OnCustomdrawList(NMHDR* pNMHDR, LRESULT* pResult)
+ 				OldColor = pDC->SetTextColor(CGetSetOptions::m_Theme.ListBoxSelectedNoFocusText());
+ 			}
+ 		}
++		else if (bHover)
++		{
++			crBkgnd = CGetSetOptions::m_Theme.ListBoxHoverBG();
++			OldColor = pDC->SetTextColor(CGetSetOptions::m_Theme.ListBoxHoverText());
++		}
+ 		else
+ 		{
+@@ -574,6 +585,15 @@ void CQListCtrl::OnCustomdrawList(NMHDR* pNMHDR, LRESULT* pResult)
+ 			}
+ 			else
+ 			{
++				CFont* pOldFont = NULL;
++				if (bHover && m_boldFont.GetSafeHandle() != NULL)
++				{
++					pOldFont = pDC->SelectObject(&m_boldFont);
++				}
+ 				pDC->DrawText(csText, rcText, DT_VCENTER | DT_EXPANDTABS | DT_NOPREFIX);
++				if (pOldFont != NULL)
++				{
++					pDC->SelectObject(pOldFont);
++				}
+ 			}
+ 		}
+@@ -1757,2 +1778,3 @@ void CQListCtrl::OnHScroll(UINT nSBCode, UINT nPos, CScrollBar* pScrollBar)
+ 	CListCtrl::OnHScroll(nSBCode, nPos, pScrollBar);
++	UpdateHoverItemFromCursor();
+ }
+@@ -1945,3 +1967,4 @@ void CQListCtrl::OnVScroll(UINT nSBCode, UINT nPos, CScrollBar* pScrollBar)
+ 	CListCtrl::OnVScroll(nSBCode, nPos, pScrollBar);
++	UpdateHoverItemFromCursor();
+ 
+ 	// Notify parent to update modern scrollbar
+@@ -2021,5 +2044,55 @@ void CQListCtrl::OnMouseMove(UINT nFlags, CPoint point)
+ 			KillTimer(TIMER_SHOW_SCROLL);
+ 		}
+ 	}
++	if (!m_trackingMouseLeave)
++	{
++		TRACKMOUSEEVENT trackMouse = {};
++		trackMouse.cbSize = sizeof(TRACKMOUSEEVENT);
++		trackMouse.dwFlags = TME_LEAVE;
++		trackMouse.hwndTrack = GetSafeHwnd();
++		m_trackingMouseLeave = (::TrackMouseEvent(&trackMouse) != FALSE);
++	}
++	SetHoverItem(HitTest(point));
+ 	CListCtrl::OnMouseMove(nFlags, point);
+ }
++
++void CQListCtrl::OnMouseLeave()
++{
++	m_trackingMouseLeave = false;
++	SetHoverItem(-1);
++}
++
++BOOL CQListCtrl::OnMouseWheel(UINT nFlags, short zDelta, CPoint pt)
++{
++	BOOL result = CListCtrl::OnMouseWheel(nFlags, zDelta, pt);
++	UpdateHoverItemFromCursor();
++	return result;
++}
++
++void CQListCtrl::SetHoverItem(int item)
++{
++	if (item < 0 || item >= GetItemCount())
++		item = -1;
++
++	if (item == m_hoverItem)
++		return;
++
++	int oldItem = m_hoverItem;
++	m_hoverItem = item;
++
++	if (oldItem >= 0 && oldItem < GetItemCount())
++		RedrawItems(oldItem, oldItem);
++	if (m_hoverItem >= 0 && m_hoverItem < GetItemCount())
++		RedrawItems(m_hoverItem, m_hoverItem);
++}
++
++void CQListCtrl::UpdateHoverItemFromCursor()
++{
++	CPoint point;
++	::GetCursorPos(&point);
++	ScreenToClient(&point);
++
++	CRect clientRect;
++	GetClientRect(&clientRect);
++	SetHoverItem(clientRect.PtInRect(point) ? HitTest(point) : -1);
++}

@@ -1,0 +1,74 @@
+name: Build Ditto with hover highlight
+
+on:
+  push:
+    branches:
+      - ditto-hover-build
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-x64:
+    name: Build portable Ditto (Windows x64)
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out build configuration
+        uses: actions/checkout@v4
+
+      - name: Check out official Ditto source
+        uses: actions/checkout@v4
+        with:
+          repository: sabrogden/Ditto
+          ref: a80fd3536bc407cac8cce43b5682022282ace983
+          path: upstream
+          persist-credentials: false
+
+      - name: Check and apply hover patch
+        shell: pwsh
+        run: |
+          $patch = Join-Path $env:GITHUB_WORKSPACE 'patches\ditto-hover-highlight.patch'
+          git -C upstream apply --check $patch
+          if ($LASTEXITCODE -ne 0) { throw 'The hover patch does not match the pinned Ditto source.' }
+          git -C upstream apply $patch
+          if ($LASTEXITCODE -ne 0) { throw 'Could not apply the hover patch.' }
+          git -C upstream diff --check
+          if ($LASTEXITCODE -ne 0) { throw 'The patch contains whitespace errors.' }
+
+      - name: Add MSBuild to PATH
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Restore NuGet packages
+        working-directory: upstream
+        shell: pwsh
+        run: |
+          nuget restore CP_Main_10.sln -NonInteractive
+          if ($LASTEXITCODE -ne 0) { throw 'NuGet package restore failed.' }
+
+      - name: Build Ditto x64
+        working-directory: upstream
+        shell: pwsh
+        run: |
+          msbuild CP_Main_10.sln /m /p:Configuration=Release /p:Platform=x64 /verbosity:minimal
+          if ($LASTEXITCODE -ne 0) { throw 'MSBuild failed.' }
+          if (-not (Test-Path 'Release64\Ditto.exe')) { throw 'Ditto.exe was not found after the build.' }
+
+      - name: Package portable ZIP
+        working-directory: upstream
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path 'DittoSetup\Output' -Force | Out-Null
+          cmd /c 'DittoSetup\BuildPortableZIP.bat Ditto-Hover-x64 bit64'
+          if ($LASTEXITCODE -ne 0) { throw 'Portable ZIP packaging failed.' }
+          if (-not (Test-Path 'DittoSetup\Output\Ditto-Hover-x64.zip')) { throw 'Portable ZIP was not created.' }
+
+      - name: Upload portable ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ditto-Hover-Windows-x64
+          path: upstream\DittoSetup\Output\Ditto-Hover-x64.zip
+          if-no-files-found: error
+          retention-days: 14
