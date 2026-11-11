@@ -112,7 +112,7 @@ diff --git a/src/QListCtrl.cpp b/src/QListCtrl.cpp
 +	ON_WM_MOUSELEAVE()
 +	ON_WM_MOUSEWHEEL()
  	ON_WM_SYSKEYDOWN()
-@@ -438,4 +442,6 @@ void CQListCtrl::OnCustomdrawList(NMHDR* pNMHDR, LRESULT* pResult)
+@@ -438,5 +442,7 @@ void CQListCtrl::OnCustomdrawList(NMHDR* pNMHDR, LRESULT* pResult)
  		rItem.stateMask = LVIS_SELECTED | LVIS_FOCUSED;
  		GetItem(&rItem);
 +		// Hover is visual only; selected rows keep the existing selection colors.
